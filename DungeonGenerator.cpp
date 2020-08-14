@@ -159,13 +159,11 @@ void ADungeonGenerator::CheckRoomIsNotOverlappingOtherRooms(URoom* &RoomToCheck)
 		// If they overlap on both the X and the Y then the rooms are overlapping
 		if (OverlappingOnX && OverlappingOnY)
 		{
-			TryPlacingRoomCount++;
 			RoomToCheck->bCanBePlaced = false;
 			return;
 		}
 	}
 	
-	TryPlacingRoomCount = 0;
 	RoomToCheck->bCanBePlaced = true;
 }
 

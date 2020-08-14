@@ -37,11 +37,12 @@ public:
 	/** The number of tiles high the room is */
 	int32 WallHeight;
 
+	/** The name of the row in the Data Table being used for this room */
 	FName RoomTypeRowName;
 
 public:
 
-	/** Returns the centre point of the room not scaled by TileSize */
+	/** Returns the centre point of the room */
 	FVector GetCenterOfRoom();
 	
 	/** Returns the extent of the room */

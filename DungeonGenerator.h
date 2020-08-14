@@ -55,7 +55,7 @@ struct FInstancedTileMesh
 {
 	GENERATED_BODY()
 
-	/** The meshe to be used as the tile */
+	/** The InstancedStaticMeshComponent to be used to spawnt the tile */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	UInstancedStaticMeshComponent* InstancedMeshComponent;
 
@@ -73,7 +73,7 @@ struct FRoomType : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<FTileMesh> FloorTileMeshes;
 
-	/** The meshes to be used as the floor tiles */
+	/** The meshes to be used as the wall tiles */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<FTileMesh> WallTileMeshes;
 
@@ -81,11 +81,11 @@ struct FRoomType : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<FTileMesh> CeilingTileMeshes;
 	
-	/** The lights to be spawned in room */
+	/** The light actor to be spawned in room */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<FLightSource> LightActors;
 
-	/** The number of tile high the room is */
+	/** The number of tiles high the room is */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	int32 WallHeight;
 };
@@ -106,7 +106,7 @@ class DUNGEON_CPP_API ADungeonGenerator : public AActor
 	GENERATED_BODY()
 	
 public:	
-	// Sets default values for this actor's properties
+	
 	ADungeonGenerator();
 
 	/** The mesh to be used as the floor tiles */
@@ -182,9 +182,6 @@ private:
 	/** Each room connection contains the index of the two rooms */
 	TArray<FConnectingRoom> RoomConnections;
 
-	/** The number of times a room has unsuccessfully been placed */
-	int32 TryPlacingRoomCount;
-
 	/** The amount the dungeon has been moved to align with the starting area */
 	FVector DungeonOffset;
 
@@ -201,16 +198,16 @@ private:
 	/** Generates a Room and checks if it overlaps with an existing room, then returns the room */
 	URoom* TryPlaceRoom();
 
-	/** Generates a Room using MinRoomSize and MaxRoomSize, then positions it with the DungeonSize */
+	/** Generates a Room using MinRoomSize and MaxRoomSize */
 	URoom* GenerateNewRoom();
 
-	/** Checks if RoomToCheck overlaps with any of the rooms in the Rooms array. If it does overlap it increases the TryPlacingRoomCount */
+	/** Checks if RoomToCheck overlaps with any of the rooms in the Rooms array */
 	void CheckRoomIsNotOverlappingOtherRooms(URoom*& RoomToCheck);
 
 	/** Spawns a random tile from the TilesArray at the AtLocation*/
 	void SpawnTile(const TArray<FInstancedTileMesh>& InstancedTileMeshesArray, const FTransform& AtLocation);
 
-	/** Loops through the Rooms array and spawns a FloorTile for every X and Y in the Room.Size */
+	/** Loops through the Rooms array and spawns the tiles */
 	void SpawnRooms();
 
 	/** Randomly selects a row from the RoomTypes DataTable and creates arrays of InstancedStaticMeshes to be spawned */
@@ -222,9 +219,10 @@ private:
 	/** Spawn walls for the passed in URoom */
 	void SpawnRoomWalls(URoom*& Room);
 
-	/** Spawns wall tiles from the StartPoint to the EndPoint with the Rotation */
+	/** Spawns wall and door tiles from the StartPoint to the EndPoint with the Rotation */
 	void SpawnWall(FVector& StartPoint, FVector& EndPoint, FRotator& Rotation, const int32& Height, TArray<FVector> DoorLocations);
 
+	/** Spawns the corridor tiles between the rooms in each FConnectingRoom */
 	void CreateCorridors(const TArray<FConnectingRoom> &ConnectingRooms);
 		
 	/**  Finds the lowest room on the X and aligns the center of it with the starting location */

@@ -5,16 +5,14 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Engine/DataTable.h"
-
 #include "Room.h"
+#include "Generator.h"
 #include "DungeonGenerator.generated.h"
-
 
 UENUM(BlueprintType)
 enum class EObjectLocation : uint8
 {
-	EOL_Floor UMETA(DisplayName = "Floor"),
-	EOL_Wall UMETA(DisplayName = "Wall"),
+	EOL_AroundRoom UMETA(DisplayName = "AroundRoom"),
 	EOL_Ceiling UMETA(DisplayName = "Ceiling")
 };
 
@@ -23,21 +21,21 @@ struct FLightSource
 {
 	GENERATED_BODY()
 
-	/** The light source actor to spawn */
+	/** The light actor to spawn */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<AActor> LightActor;
 
-	/** Maximum number of lights per wall or ceiling */
+	/** The tile distance between each light */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	int32 MaxPerLength;
-
+	int32 TileDistanceBetweenNext;
+	
 	/** The section of the room the lights will be placed along */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	EObjectLocation Location;
 };
 
 USTRUCT(BlueprintType)
-struct FTileMesh
+struct FTile
 {
 	GENERATED_BODY()
 
@@ -45,19 +43,14 @@ struct FTileMesh
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	UStaticMesh* Mesh;
 
-	/** The probability of the mesh being spawned */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	float Probability;
+	/** The InstancedStaticMeshComponent to be used to spawn the tile */
+	UInstancedStaticMeshComponent* InstancedMeshComponent;
 };
 
 USTRUCT(BlueprintType)
-struct FInstancedTileMesh
+struct FRandomTile : public FTile
 {
 	GENERATED_BODY()
-
-	/** The InstancedStaticMeshComponent to be used to spawnt the tile */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	UInstancedStaticMeshComponent* InstancedMeshComponent;
 
 	/** The probability of the mesh being spawned */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
@@ -71,23 +64,39 @@ struct FRoomType : public FTableRowBase
 
 	/** The meshes to be used as the floor tiles */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TArray<FTileMesh> FloorTileMeshes;
+	TArray<FRandomTile> FloorTileMeshes;
 
 	/** The meshes to be used as the wall tiles */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TArray<FTileMesh> WallTileMeshes;
+	TArray<FRandomTile> WallTileMeshes;
+
+	/** The meshes to be used as the wall addition tiles */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TArray<FRandomTile> WallAdditionTileMeshes;
+
+	/** The meshes to be used as the door tiles */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TArray<FRandomTile> DoorTileMeshes;
+
+	/** The meshes to be used as the door addition tiles */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TArray<FRandomTile> DoorAdditionTileMeshes;
 
 	/** The meshes to be used as the ceiling tiles */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TArray<FTileMesh> CeilingTileMeshes;
+	TArray<FRandomTile> CeilingTileMeshes;
 	
-	/** The light actor to be spawned in room */
+	/** The light actors to be spawned in room */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<FLightSource> LightActors;
-
+	
 	/** The number of tiles high the room is */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	int32 WallHeight;
+
+	/** The probability of this room being spawned */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float Probability;
 };
 
 USTRUCT()
@@ -101,7 +110,7 @@ struct FConnectingRoom
 };
 
 UCLASS()
-class DUNGEON_CPP_API ADungeonGenerator : public AActor
+class DUNGEON_CPP_API ADungeonGenerator : public AGenerator
 {
 	GENERATED_BODY()
 	
@@ -109,38 +118,9 @@ public:
 	
 	ADungeonGenerator();
 
-	/** The mesh to be used as the floor tiles */
+	/** The room types data */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Rooms")
 	class UDataTable* RoomTypesDataTable;
-
-	/** InstancedStaticMeshComponents are added to these arrays using the meshes from RoomTypesDataTable */
-	TArray<FInstancedTileMesh> RoomFloorTiles;
-	TArray<FInstancedTileMesh> RoomWallTiles;
-	TArray<FInstancedTileMesh> RoomCeilingTiles;
-
-	/** The meshes to be used as the door tiles */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Doors")
-	TArray<FTileMesh> DoorTileMeshes;
-
-	/** InstancedStaticMeshComponent are added to this array using  the meshes from DoorTileMeshes */
-	TArray<FInstancedTileMesh> DoorTiles;
-
-	/** The meshes to be used as the floor tiles */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Corridors")
-	TArray<FTileMesh> CorridorFloorTileMeshes;
-
-	/** The meshes to be used as the floor tiles */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Corridors")
-	TArray<FTileMesh> CorridorWallTileMeshes;
-
-	/** The meshes to be used as the ceiling tiles */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Corridors")
-	TArray<FTileMesh> CorridorCeilingTileMeshes;
-
-	/** The InstancedStaticMeshComponents used to spawn the corridor tiles */
-	TArray<FInstancedTileMesh> CorridorFloorTiles;
-	TArray<FInstancedTileMesh> CorridorWallTiles;
-	TArray<FInstancedTileMesh> CorridorCeilingTiles;
 
 	/** The size of each tile, this needs to match the width and height of the selected tiles */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Config")
@@ -164,12 +144,33 @@ public:
 
 	/** The maximum number of rooms to generate */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Config")
-	int32 MaxNumberOfRooms;
+	int32 NumberOfRooms;
 
-	/** The stream used to generate random numbers */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dungeon | Stream")
-	FRandomStream Stream;
+	/** The tiles to be used for each section of the rooms */
+	TArray<FRandomTile> RoomFloorTiles;
+	TArray<FRandomTile> RoomWallTiles;
+	TArray<FRandomTile> RoomWallAdditionTiles;
+	TArray<FRandomTile> RoomCeilingTiles;
+	TArray<FRandomTile> RoomDoorTiles;
+	TArray<FRandomTile> RoomDoorAdditionTiles;
 
+	/** The meshes to be used as the floor tiles in the corridors */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Corridors")
+	TArray<FRandomTile> CorridorFloorTileMeshes;
+
+	/** The meshes to be used as the wall tiles in the corridors */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Corridors")
+	TArray<FRandomTile> CorridorWallTileMeshes;
+
+	/** The meshes to be used as the ceiling tiles in the corridors */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dungeon | Corridors")
+	TArray<FRandomTile> CorridorCeilingTileMeshes;
+
+	/** The tiles to be used for each section of the corridors */
+	TArray<FRandomTile> CorridorFloorTiles;
+	TArray<FRandomTile> CorridorWallTiles;
+	TArray<FRandomTile> CorridorCeilingTiles;
+	
 	/** The text to use for the FRandomStream */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Dungeon | Stream")
 	int32 StreamInput;
@@ -189,13 +190,9 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-public:	
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
-
 private:
 
-	/** Generates a Room and checks if it overlaps with an existing room, then returns the room */
+	/** Places a newly generated room if it doesn't overlap with an existing room */
 	URoom* TryPlaceRoom();
 
 	/** Generates a Room using MinRoomSize and MaxRoomSize */
@@ -205,13 +202,19 @@ private:
 	void CheckRoomIsNotOverlappingOtherRooms(URoom*& RoomToCheck);
 
 	/** Spawns a random tile from the TilesArray at the AtLocation*/
-	void SpawnTile(const TArray<FInstancedTileMesh>& InstancedTileMeshesArray, const FTransform& AtLocation);
+	void SpawnRandomTile(const TArray<FRandomTile>& InstancedTileMeshesArray, const FTransform& AtLocation);
+
+	/** Spawns a random tile from the TilesArray at the AtLocation*/
+	void SpawnAllTiles(const TArray<FRandomTile>& InstancedTileMeshesArray, const FTransform& AtLocation, const int32 CurrentHeight);
 
 	/** Loops through the Rooms array and spawns the tiles */
 	void SpawnRooms();
 
-	/** Randomly selects a row from the RoomTypes DataTable and creates arrays of InstancedStaticMeshes to be spawned */
-	void CreateInstancedStaticMeshesForCurrentRoom(URoom*& CurrentRoom);
+	/** Creates arrays of InstancedStaticMeshes from the SelectedRoomType to be spawned */
+	void CreateInstancedStaticMeshesForCurrentRoom(FRoomType*& SelectedRoomType);
+
+	/** Randomly selects a row from the RoomTypes DataTable and applies it to the CurrentRoom  */
+	FRoomType* PickRandomRoomTypeForRoom(URoom*& CurrentRoom);
 
 	/** Spawn floor tiles from the CorridorStart to the CorridorEnd */
 	void SpawnCorridorTiles(const FVector& CorridorStart, const FVector& CorridorEnd);
@@ -229,8 +232,14 @@ private:
 	void MoveDungeonToStartArea();
 
 	/** Create InstancedStaticMeshComponent from the Meshes passed in */
-	void CreateInstancedStaticMeshComponents(const TArray<FTileMesh>& TileMeshes, TArray<FInstancedTileMesh>& InstancedTileMeshes);
+	void CreateInstancedStaticMeshComponents(const TArray<FRandomTile>& TileMeshes, TArray<FRandomTile>& InstancedTileMeshes);
 
 	/** Spawns light sources in all rooms */
 	void SpawnLightsInRooms();
+
+	/** Pick a random point where the two rooms will still overlap, pass in all X values or Y values */
+	int32 GetRandomPointWhereRoomsOverlap(const float ConnectingRoomPosition, const float ConnectingRoomExtent, const float NewRoomSize);
+
+	/** Spawns as many lights as possible from StartLocation to EndLocation with at least the GapBetweenLights between them */
+	void SpawnLightsAlongLength(FVector StartLocation, FVector EndLocation, FRotator Rotation, int32 GapBetweenLights, TSubclassOf<AActor> ActorToSpawn);
 };

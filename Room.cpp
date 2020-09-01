@@ -10,10 +10,10 @@ URoom::URoom()
 
 FVector URoom::GetCenterOfRoom()
 {
-	return Position - (Size / 2);
+	return Position + (Size / 2);
 }
 
-FVector URoom::GetRoomExtent()
+FVector URoom::GetRoomMax()
 {
 	return Position + Size;
 }

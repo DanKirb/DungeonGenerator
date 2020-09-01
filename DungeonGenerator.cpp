@@ -6,6 +6,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "DrawDebugHelpers.h"
 
 // Sets default values
 ADungeonGenerator::ADungeonGenerator()
@@ -17,39 +18,32 @@ ADungeonGenerator::ADungeonGenerator()
 	TileSize = 600;
 	MinRoomSize = 3;
 	MaxRoomSize = 6;
-	MaxNumberOfRooms = 15;
+	NumberOfRooms = 15;
 	MinRoomDistance = 1;
 	MaxRoomDistance = 3;
 	StreamInput = 0;
+	StreamInput = 0;
+
+	
 }
 
 // Called when the game starts or when spawned
 void ADungeonGenerator::BeginPlay()
 {
-	Super::BeginPlay();
-	
-	// Check if there is an input seed, if not generate a new one
-	if (StreamInput)
-	{
-		Stream.Initialize(StreamInput);
-	}
-	else
-	{
-		Stream.GenerateNewSeed();
-	}
+	Super::BeginPlay();	
+
+	Stream = InitializeStream(StreamInput);
 
 	// Create the constant InstancedStaticMeshComponents
-	CreateInstancedStaticMeshComponents(DoorTileMeshes, DoorTiles);
 	CreateInstancedStaticMeshComponents(CorridorFloorTileMeshes, CorridorFloorTiles);
 	CreateInstancedStaticMeshComponents(CorridorWallTileMeshes, CorridorWallTiles);
 	CreateInstancedStaticMeshComponents(CorridorCeilingTileMeshes, CorridorCeilingTiles);
 
 	// Create array of rooms that can be placed in the world
-	while (Rooms.Num() < MaxNumberOfRooms)
+	while (Rooms.Num() < NumberOfRooms)
 	{
 		TryPlaceRoom();
 	}
-
 
 	// Move dungeon so lowest room connects to starting area
 	MoveDungeonToStartArea();
@@ -57,13 +51,6 @@ void ADungeonGenerator::BeginPlay()
 	CreateCorridors(RoomConnections);
 	SpawnRooms();
 	SpawnLightsInRooms();
-}
-
-// Called every frame
-void ADungeonGenerator::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-
 }
 
 URoom* ADungeonGenerator::TryPlaceRoom()
@@ -78,22 +65,27 @@ URoom* ADungeonGenerator::TryPlaceRoom()
 
 		int32 SpaceBetweenRooms = UKismetMathLibrary::RandomIntegerInRangeFromStream(MinRoomDistance, MaxRoomDistance, Stream);
 		FVector NewRoomPosition = FVector(0.f);
+		int32 RandomPosition = 0;
 
 		// Pick a random direction to spawn the room
 		int32 DirectionToPlaceRoom = UKismetMathLibrary::RandomIntegerInRangeFromStream(0, 3, Stream);
 		switch (DirectionToPlaceRoom)
 		{
 		case 0: // Top
-			NewRoomPosition = FVector(ConnectingRoom->GetRoomExtent().X + SpaceBetweenRooms, ConnectingRoom->Position.Y, 0.f);
+			RandomPosition = GetRandomPointWhereRoomsOverlap(ConnectingRoom->Position.Y, ConnectingRoom->GetRoomMax().Y, NewRoom->Size.Y);
+			NewRoomPosition = FVector(ConnectingRoom->GetRoomMax().X + SpaceBetweenRooms, RandomPosition, 0.f);
 			break;
 		case 1: // Right
-			NewRoomPosition = FVector(ConnectingRoom->Position.X, ConnectingRoom->GetRoomExtent().Y + SpaceBetweenRooms, 0.f);
+			RandomPosition = GetRandomPointWhereRoomsOverlap(ConnectingRoom->Position.X, ConnectingRoom->GetRoomMax().X, NewRoom->Size.X);
+			NewRoomPosition = FVector(RandomPosition, ConnectingRoom->GetRoomMax().Y + SpaceBetweenRooms, 0.f);
 			break;
 		case 2: // Bottom
-			NewRoomPosition = FVector(ConnectingRoom->Position.X - NewRoom->Size.X - SpaceBetweenRooms, ConnectingRoom->Position.Y, 0.f);
+			RandomPosition = GetRandomPointWhereRoomsOverlap(ConnectingRoom->Position.Y, ConnectingRoom->GetRoomMax().Y, NewRoom->Size.Y);
+			NewRoomPosition = FVector(ConnectingRoom->Position.X - NewRoom->Size.X - SpaceBetweenRooms, RandomPosition, 0.f);
 			break;
 		case 3: // Left
-			NewRoomPosition = FVector(ConnectingRoom->Position.X, ConnectingRoom->Position.Y - NewRoom->Size.Y - SpaceBetweenRooms, 0.f);
+			RandomPosition = GetRandomPointWhereRoomsOverlap(ConnectingRoom->Position.X, ConnectingRoom->GetRoomMax().X, NewRoom->Size.X);
+			NewRoomPosition = FVector(RandomPosition, ConnectingRoom->Position.Y - NewRoom->Size.Y - SpaceBetweenRooms, 0.f);
 			break;
 		default:
 			break;
@@ -143,13 +135,13 @@ void ADungeonGenerator::CheckRoomIsNotOverlappingOtherRooms(URoom* &RoomToCheck)
 	{
 		// Check if the two rooms overlap on the X
 		float X1 = FMath::Max(CurrentRoom->Position.X, RoomToCheck->Position.X);
-		float X2 = FMath::Min(CurrentRoom->GetRoomExtent().X, RoomToCheck->GetRoomExtent().X);
+		float X2 = FMath::Min(CurrentRoom->GetRoomMax().X, RoomToCheck->GetRoomMax().X);
 		
 		bool OverlappingOnX = X1 <= X2;
 
 		// Check if the two rooms overlap on the Y
 		float Y1 = FMath::Max(CurrentRoom->Position.Y, RoomToCheck->Position.Y);
-		float Y2 = FMath::Min(CurrentRoom->GetRoomExtent().Y, RoomToCheck->GetRoomExtent().Y);
+		float Y2 = FMath::Min(CurrentRoom->GetRoomMax().Y, RoomToCheck->GetRoomMax().Y);
 
 		bool OverlappingOnY = Y1 <= Y2;
 
@@ -168,7 +160,8 @@ void ADungeonGenerator::SpawnRooms()
 {
 	for (URoom* Room : Rooms)
 	{
-		CreateInstancedStaticMeshesForCurrentRoom(Room);
+		FRoomType* RoomType = PickRandomRoomTypeForRoom(Room);
+		CreateInstancedStaticMeshesForCurrentRoom(RoomType);
 
 		for (float x = 0; x < Room->Size.X; x++)
 		{
@@ -178,10 +171,10 @@ void ADungeonGenerator::SpawnRooms()
 				FVector PositionOfTile = ActualRoomPosition + FVector(x * TileSize, y * TileSize, 0.f);
 
 				// Spawn floor tile				
-				SpawnTile(RoomFloorTiles, FTransform(PositionOfTile));
+				SpawnRandomTile(RoomFloorTiles, FTransform(PositionOfTile));
 
 				// Spawn ceiling tile				
-				SpawnTile(RoomCeilingTiles, FTransform(PositionOfTile + FVector(0.f, 0.f, TileSize * Room->WallHeight)));
+				SpawnRandomTile(RoomCeilingTiles, FTransform(PositionOfTile + FVector(0.f, 0.f, TileSize * Room->WallHeight)));
 			}
 		}
 
@@ -213,7 +206,7 @@ void ADungeonGenerator::SpawnRoomWalls(URoom* &Room)
 	// Spawn wall tiles along right wall
 	WallRotation = FRotator(0.f, -90.f, 0.f);
 	StartPoint = Room->Position + FVector(0.f, Room->Size.Y, 0.f);;
-	EndPoint = Room->GetRoomExtent();
+	EndPoint = Room->GetRoomMax();
 	SpawnWall(StartPoint, EndPoint, WallRotation, Room->WallHeight ,Room->DoorLocations);
 }
 
@@ -243,39 +236,42 @@ void ADungeonGenerator::SpawnWall(FVector &StartPoint, FVector &EndPoint, FRotat
 
 			FVector Location = FVector(X, Y, h) * TileSize;
 
-			TArray<FInstancedTileMesh> TilesToSpawn = RoomWallTiles;
+			TArray<FRandomTile> WallTilesToSpawn = RoomWallTiles;
+			TArray<FRandomTile> WallAdditionTilesToSpawn = RoomWallAdditionTiles;
 
 			// Check if the current location should be a door
 			if (DoorLocations.Contains(FVector(X, Y, h)))
 			{		
-				TilesToSpawn = DoorTiles;
-				
+				WallTilesToSpawn = RoomDoorTiles;
+				WallAdditionTilesToSpawn = RoomDoorAdditionTiles;				
 			}
 
-			SpawnTile(TilesToSpawn, FTransform(Rotation, Location));
+			// Spawn wall tile
+			SpawnRandomTile(WallTilesToSpawn, FTransform(Rotation, Location));
+
+			// Spawn wall addition tile
+			SpawnAllTiles(WallAdditionTilesToSpawn, FTransform(Rotation, Location), h);
 		}
 	}
 }
 
-void ADungeonGenerator::CreateInstancedStaticMeshComponents(const TArray<FTileMesh>& TileMeshes, TArray<FInstancedTileMesh>& InstancedTileMeshes)
+void ADungeonGenerator::CreateInstancedStaticMeshComponents(const TArray<FRandomTile>& TileMeshes, TArray<FRandomTile>& InstancedTileMeshes)
 {
 	// Empty previously used meshes
 	InstancedTileMeshes.Empty();
 
 	if (TileMeshes.Num() > 0)
 	{
-		for (FTileMesh Tile : TileMeshes)
+		for (FRandomTile Tile : TileMeshes)
 		{
 			UInstancedStaticMeshComponent* Instance = NewObject<UInstancedStaticMeshComponent>(this);
 			Instance->RegisterComponent();
 			Instance->SetStaticMesh(Tile.Mesh);
 			Instance->AttachTo(GetRootComponent());
 
-			FInstancedTileMesh InstancedTileMesh;
-			InstancedTileMesh.InstancedMeshComponent = Instance;
-			InstancedTileMesh.Probability = Tile.Probability;
+			Tile.InstancedMeshComponent = Instance;
 
-			InstancedTileMeshes.Add(InstancedTileMesh);
+			InstancedTileMeshes.Add(Tile);
 		}
 	}
 }
@@ -292,21 +288,21 @@ void ADungeonGenerator::CreateCorridors(const TArray<FConnectingRoom>& Connectin
 		URoom* RoomA = Rooms[RoomConnection.RoomAIndex];
 		URoom* RoomB = Rooms[RoomConnection.RoomBIndex];
 
-		// Find the min and max of the room positions and extents to calculate where the rooms are in 
+		// Find the min and max of the room positions and Maximums to calculate where the rooms are in 
 		float MaxOriginX = FMath::Max(RoomA->Position.X, RoomB->Position.X);
-		float MinExtentX = FMath::Min(RoomA->GetRoomExtent().X, RoomB->GetRoomExtent().X);
+		float MinMaximumX = FMath::Min(RoomA->GetRoomMax().X, RoomB->GetRoomMax().X);
 
 		float MaxOriginY = FMath::Max(RoomA->Position.Y, RoomB->Position.Y);
-		float MinExtentY = FMath::Min(RoomA->GetRoomExtent().Y, RoomB->GetRoomExtent().Y);
+		float MinMaximumY = FMath::Min(RoomA->GetRoomMax().Y, RoomB->GetRoomMax().Y);
 
 		// Check if rooms are next to each other on the Y axis
-		if (MaxOriginX < MinExtentX && MaxOriginY > MinExtentY)
+		if (MaxOriginX < MinMaximumX && MaxOriginY > MinMaximumY)
 		{			
 			URoom* LeftRoom;
 			URoom* RightRoom;
 
 			// Check which room is on the right on the Y axis
-			if (RoomB->Position.Y > RoomA->GetRoomExtent().Y)
+			if (RoomB->Position.Y > RoomA->GetRoomMax().Y)
 			{
 				RightRoom = RoomB;
 				LeftRoom = RoomA;
@@ -318,10 +314,10 @@ void ADungeonGenerator::CreateCorridors(const TArray<FConnectingRoom>& Connectin
 			}
 
 			// Pick the random point between the points the rooms overlap on the X
-			float CorridorX = UKismetMathLibrary::RandomIntegerInRangeFromStream(MaxOriginX, MinExtentX - 1, Stream);
+			float CorridorX = UKismetMathLibrary::RandomIntegerInRangeFromStream(MaxOriginX, MinMaximumX - 1, Stream);
 
 			// Corridor will go from the right side of the left room to the right room at the random point on the X
-			FVector CorridorStart = FVector(CorridorX, LeftRoom->GetRoomExtent().Y, 0.f);
+			FVector CorridorStart = FVector(CorridorX, LeftRoom->GetRoomMax().Y, 0.f);
 			FVector CorridorEnd = FVector(CorridorX, RightRoom->Position.Y, 0.f);
 
 			// Add doors location to rooms
@@ -340,7 +336,7 @@ void ADungeonGenerator::CreateCorridors(const TArray<FConnectingRoom>& Connectin
 			URoom* BottomRoom;
 
 			// Check which room is higher on the X axis
-			if (RoomB->Position.X > RoomA->GetRoomExtent().X)
+			if (RoomB->Position.X > RoomA->GetRoomMax().X)
 			{
 				TopRoom = RoomB;
 				BottomRoom = RoomA;
@@ -352,10 +348,10 @@ void ADungeonGenerator::CreateCorridors(const TArray<FConnectingRoom>& Connectin
 			}
 
 			// Pick the random point between the points the rooms overlap on the Y
-			float CorridorY = UKismetMathLibrary::RandomIntegerInRangeFromStream(MaxOriginY, MinExtentY - 1, Stream);			
+			float CorridorY = UKismetMathLibrary::RandomIntegerInRangeFromStream(MaxOriginY, MinMaximumY - 1, Stream);			
 
 			// Corridor will go from the top of the bottom room to the top room at the random point on the Y
-			FVector CorridorStart = FVector(BottomRoom->GetRoomExtent().X, CorridorY, 0.f);
+			FVector CorridorStart = FVector(BottomRoom->GetRoomMax().X, CorridorY, 0.f);
 			FVector CorridorEnd = FVector(TopRoom->Position.X, CorridorY, 0.f);
 
 			// Add door locations to rooms
@@ -371,9 +367,9 @@ void ADungeonGenerator::CreateCorridors(const TArray<FConnectingRoom>& Connectin
 
 void ADungeonGenerator::SpawnCorridorTiles(const FVector &CorridorStart, const FVector &CorridorEnd)
 {	
-	float NumberofTiles = (CorridorStart - CorridorEnd).Size() == 0 ? 1 : (CorridorStart - CorridorEnd).Size();
+	float NumberOfTiles = (CorridorStart - CorridorEnd).Size() == 0 ? 1 : (CorridorStart - CorridorEnd).Size();
 
-	for (int32 i = 0; i <= NumberofTiles - 1; i++)
+	for (int32 i = 0; i <= NumberOfTiles - 1; i++)
 	{
 		FVector PositionOfTile;
 		FVector OpositeWallPosition;
@@ -400,16 +396,16 @@ void ADungeonGenerator::SpawnCorridorTiles(const FVector &CorridorStart, const F
 			OpositeWallRotation = FRotator(0.f, -90.f, 0.f);
 		}
 
-		SpawnTile(CorridorFloorTiles, FTransform(PositionOfTile));
+		SpawnRandomTile(CorridorFloorTiles, FTransform(PositionOfTile));
 
-		SpawnTile(CorridorWallTiles, FTransform(WallRotation, WallPosition));
-		SpawnTile(CorridorWallTiles, FTransform(OpositeWallRotation, OpositeWallPosition));
+		SpawnRandomTile(CorridorWallTiles, FTransform(WallRotation, WallPosition));
+		SpawnRandomTile(CorridorWallTiles, FTransform(OpositeWallRotation, OpositeWallPosition));
 
-		SpawnTile(CorridorCeilingTiles, FTransform(PositionOfTile + FVector(0.f, 0.f, TileSize)));
+		SpawnRandomTile(CorridorCeilingTiles, FTransform(PositionOfTile + FVector(0.f, 0.f, TileSize)));
 	}
 }
 
-void ADungeonGenerator::SpawnTile(const TArray<FInstancedTileMesh> &InstancedTileMeshesArray, const FTransform &AtLocation)
+void ADungeonGenerator::SpawnRandomTile(const TArray<FRandomTile> &InstancedTileMeshesArray, const FTransform &AtLocation)
 {
 	if (InstancedTileMeshesArray.Num() > 0)
 	{
@@ -428,6 +424,17 @@ void ADungeonGenerator::SpawnTile(const TArray<FInstancedTileMesh> &InstancedTil
 			{
 				InstancedTileMeshesArray[TileToSpawnIndex].InstancedMeshComponent->AddInstance(AtLocation);
 			}
+		}
+	}
+}
+
+void ADungeonGenerator::SpawnAllTiles(const TArray<FRandomTile>& InstancedTileMeshesArray, const FTransform& AtLocation, const int32 CurrentHeight)
+{
+	if (InstancedTileMeshesArray.Num() > 0)
+	{
+		for (FRandomTile Tile : InstancedTileMeshesArray)
+		{
+			Tile.InstancedMeshComponent->AddInstance(AtLocation);
 		}
 	}
 }
@@ -455,28 +462,46 @@ void ADungeonGenerator::MoveDungeonToStartArea()
 	SetActorLocation(EndPosition);
 }
 
-void ADungeonGenerator::CreateInstancedStaticMeshesForCurrentRoom(URoom* &CurrentRoom)
+FRoomType* ADungeonGenerator::PickRandomRoomTypeForRoom(URoom*& CurrentRoom)
 {
+	FRoomType* SelectedRoomType = nullptr;
+
 	if (RoomTypesDataTable)
 	{
-		// Randomly select room row from the datatable
 		auto RowNames = RoomTypesDataTable->GetRowNames();
-		int32 RoomIndex = UKismetMathLibrary::RandomIntegerInRangeFromStream(0, RowNames.Num() - 1, Stream);
-		FName RoomTypeRowName = RowNames[RoomIndex];
-
 		const FString ContextString(TEXT("Selected Room Context"));
-		FRoomType* SelectedRoomType = RoomTypesDataTable->FindRow<FRoomType>(RoomTypeRowName, ContextString, true);
+		bool RoomSelected = false;
+		FName RoomTypeRowName;
 
-		if (SelectedRoomType)
+		// Randomly select a room from the datatable using it's probability
+		while (!RoomSelected)
 		{
-			// Create instanced static meshes of the meshes selected in the row
-			CreateInstancedStaticMeshComponents(SelectedRoomType->FloorTileMeshes, RoomFloorTiles);
-			CreateInstancedStaticMeshComponents(SelectedRoomType->WallTileMeshes, RoomWallTiles);
-			CreateInstancedStaticMeshComponents(SelectedRoomType->CeilingTileMeshes, RoomCeilingTiles);
+			int32 RoomIndex = UKismetMathLibrary::RandomIntegerInRangeFromStream(0, RowNames.Num() - 1, Stream);
+			RoomTypeRowName = RowNames[RoomIndex];
+			SelectedRoomType = RoomTypesDataTable->FindRow<FRoomType>(RoomTypeRowName, ContextString, true);
+			float Probability = SelectedRoomType->Probability == 0 ? 1 : SelectedRoomType->Probability;
 
-			CurrentRoom->SetWallHeight(SelectedRoomType->WallHeight);
-			CurrentRoom->RoomTypeRowName = RoomTypeRowName;
+			RoomSelected = UKismetMathLibrary::RandomBoolWithWeightFromStream(Probability, Stream);
 		}
+
+		CurrentRoom->SetWallHeight(SelectedRoomType->WallHeight);
+		CurrentRoom->RoomTypeRowName = RoomTypeRowName;
+	}
+
+	return SelectedRoomType;
+}
+
+void ADungeonGenerator::CreateInstancedStaticMeshesForCurrentRoom(FRoomType* &SelectedRoomType)
+{
+	if (SelectedRoomType)
+	{
+		// Create instanced static meshes of the meshes selected in the row
+		CreateInstancedStaticMeshComponents(SelectedRoomType->FloorTileMeshes, RoomFloorTiles);
+		CreateInstancedStaticMeshComponents(SelectedRoomType->WallTileMeshes, RoomWallTiles);
+		CreateInstancedStaticMeshComponents(SelectedRoomType->CeilingTileMeshes, RoomCeilingTiles);
+		CreateInstancedStaticMeshComponents(SelectedRoomType->DoorTileMeshes, RoomDoorTiles);
+		CreateInstancedStaticMeshComponents(SelectedRoomType->WallAdditionTileMeshes, RoomWallAdditionTiles);
+		CreateInstancedStaticMeshComponents(SelectedRoomType->DoorAdditionTileMeshes, RoomDoorAdditionTiles);
 	}
 }
 
@@ -495,20 +520,46 @@ void ADungeonGenerator::SpawnLightsInRooms()
 				for (FLightSource LightActor : RoomType->LightActors)
 				{
 					FActorSpawnParameters SpawnParams;
-					FVector LightLocation(0.f);
+					int32 GapBetweenLights = LightActor.TileDistanceBetweenNext == 0 ? 1 : LightActor.TileDistanceBetweenNext;
 
 					switch (LightActor.Location)
 					{
-					case EObjectLocation::EOL_Wall:
+					case EObjectLocation::EOL_AroundRoom:
+					{
+						FVector StartLocation = Room->Position;
+						FVector EndLocation = FVector(Room->GetRoomMax().X, Room->Position.Y, 0.f);
 
-						// Temporary code, just spawns the light once in the centre of the left wall
-						LightLocation = Room->Position * TileSize;
-						LightLocation.X += (Room->Size.X * TileSize) / 2;
-						LightLocation.Z = TileSize / 2;
+						// Left wall
+						SpawnLightsAlongLength(StartLocation, EndLocation, FRotator(0.f, 90.f, 0.f), GapBetweenLights, LightActor.LightActor);
+						// Right wall
+						SpawnLightsAlongLength(FVector(Room->Position.X, Room->GetRoomMax().Y, 0.f), FVector(Room->GetRoomMax().X, Room->GetRoomMax().Y, 0.f), FRotator(0.f, 270.f, 0.f), GapBetweenLights, LightActor.LightActor);
+						// Bottom wall
+						SpawnLightsAlongLength(StartLocation, FVector(Room->Position.X, Room->GetRoomMax().Y, 0.f), FRotator(0.f), GapBetweenLights, LightActor.LightActor);
+						// Top wall
+						SpawnLightsAlongLength(FVector(Room->GetRoomMax().X, Room->Position.Y, 0.f), FVector(Room->GetRoomMax().X, Room->GetRoomMax().Y, 0.f), FRotator(0.f, 180.f, 0.f), GapBetweenLights, LightActor.LightActor);
+					}
+						break;
+					case EObjectLocation::EOL_Ceiling: // Spawn ceiling light in the centre of the room on the ceiling
+					{
+						FVector StartLocation(0.f);
+						FVector EndLocation(0.f);
 
-						LightLocation -= DungeonOffset;
-						GetWorld()->SpawnActor<AActor>(LightActor.LightActor, LightLocation, FRotator(0.f, 90.f, 0.f));
+						// Find which axis the room is longer in and spawn them along that axis
+						if (Room->Size.X >= Room->Size.Y)
+						{
+							float Y = Room->Position.Y + (Room->Size.Y / 2);
+							StartLocation = FVector(Room->Position.X, Y, RoomType->WallHeight);
+							EndLocation = FVector(Room->GetRoomMax().X, Y, RoomType->WallHeight);
+						}
+						else
+						{
+							float X = Room->Position.X + (Room->Size.X / 2);
+							StartLocation = FVector(X, Room->Position.Y, RoomType->WallHeight);
+							EndLocation = FVector(X, Room->GetRoomMax().Y, RoomType->WallHeight);
+						}
 
+						SpawnLightsAlongLength(StartLocation, EndLocation, FRotator(0.f), GapBetweenLights, LightActor.LightActor);
+					}
 						break;
 					default:
 						break;
@@ -516,5 +567,59 @@ void ADungeonGenerator::SpawnLightsInRooms()
 				}
 			}
 		}
+	}
+}
+
+int32 ADungeonGenerator::GetRandomPointWhereRoomsOverlap(float ConnectingRoomPosition, float ConnectingRoomMaximum, float NewRoomSize)
+{
+	int32 MinYPosition = (ConnectingRoomPosition - NewRoomSize) + 1;
+	int32 MaxYPosition = ConnectingRoomMaximum - 1;
+	return UKismetMathLibrary::RandomIntegerInRangeFromStream(MinYPosition, MaxYPosition, Stream);
+}
+
+void ADungeonGenerator::SpawnLightsAlongLength(FVector StartLocation, FVector EndLocation, FRotator Rotation, int32 GapBetweenLights, TSubclassOf<AActor> ActorToSpawn)
+{
+	int32 Length = (StartLocation - EndLocation).Size();
+
+	int32 NumberOfTilesNeeded = FMath::FloorToInt(Length / GapBetweenLights) * GapBetweenLights;
+	if (NumberOfTilesNeeded == Length)
+		NumberOfTilesNeeded -= GapBetweenLights;
+	int32 TilesOnEitherSide = (Length - NumberOfTilesNeeded) / 2;
+
+	// If length can fit more than one light with GapBetweenLights between them
+	if (TilesOnEitherSide > 0)
+	{
+		for (int32 i = TilesOnEitherSide; i < Length; i += GapBetweenLights)
+		{
+			FVector LightLocation = StartLocation * TileSize;
+
+			if (StartLocation.X == EndLocation.X)
+			{
+				LightLocation.Y += TileSize * i;
+			}
+			else
+			{
+				LightLocation.X += TileSize * i;
+			}
+
+			LightLocation -= DungeonOffset;
+			GetWorld()->SpawnActor<AActor>(ActorToSpawn, LightLocation, Rotation);
+		}
+	}
+	else // else just spawn one light in the middle
+	{
+		FVector LightLocation = StartLocation * TileSize;
+		float Centre = Length / 2;
+		if (StartLocation.X == EndLocation.X)
+		{
+			LightLocation.Y += TileSize * Centre;
+		}
+		else
+		{
+			LightLocation.X += TileSize * Centre;
+		}
+
+		LightLocation -= DungeonOffset;
+		GetWorld()->SpawnActor<AActor>(ActorToSpawn, LightLocation, Rotation);
 	}
 }

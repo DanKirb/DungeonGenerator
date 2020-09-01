@@ -46,7 +46,7 @@ public:
 	FVector GetCenterOfRoom();
 	
 	/** Returns the extent of the room */
-	FVector GetRoomExtent();
+	FVector GetRoomMax();
 
 	FORCEINLINE void SetRoomPosition(FVector Pos) { Position = Pos; }
 
